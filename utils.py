@@ -2,16 +2,24 @@ from __future__ import division
 import math
 import pprint
 import scipy.misc
+import cv2
 import numpy as np
 from scipy.misc import imresize
+from scipy.misc import toimage
 
 pp = pprint.PrettyPrinter()
 
 get_stddev = lambda x, k_h, k_w: 1/math.sqrt(k_w*k_h*x.get_shape()[-1])
 
 
-def transform_image(image_path, image_size, is_crop):
+def transform_image(image_path, is_crop, image_size=128):
     return transform(imread(image_path), image_size, is_crop)
+
+
+def transform_raw(img, image_size=128):
+    arr = np.frombuffer(img, dtype=np.uint8)
+    img_np = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+    return transform(img_np, image_size, False)
 
 
 def transform(image, size, is_crop):

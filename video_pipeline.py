@@ -1,12 +1,6 @@
 import zlib
-import numpy as np
-import tensorflow as tf
-import cv2
-import json
-import base64
-import time
-from multiprocessing import Process, Queue
-from threading import Thread
+
+from nn_process import NeuralProcess
 
 
 class Packet:
@@ -18,103 +12,12 @@ class Packet:
         self.img_data = data[16:497]
 
 
-class NeuralNetwork:
-
-    def __init__(self):
-        self.queue = Queue()
-        self.nn_process = Process(target=self.frames_process, args=(self.queue,))
-
-    def start_processing(self):
-        self.nn_process.start()
-
-    def put_recent_frame(self, frame):
-        self.queue.put(frame)
-
-    def frames_process(self, q: Queue):
-
-        isLastFrameProcessed = False
-
-        class FramesWatcher:
-
-            def __init__(self, q):
-                self.queue = q
-                self.stopped = False
-                self.isLastFrameProcessed = False
-                self.last_frame = None
-                self.watcher = Thread(target=self.watch_frames)
-
-            def start(self):
-                self.watcher.start()
-                print('frames watcher started')
-
-            def watch_frames(self):
-                while not self.stopped:
-                    # always keeping the last frame
-                    self.last_frame = self.queue.get()
-                    self.isLastFrameProcessed = False
-                    if not self.last_frame:
-                        self.stopped = True
-                print('frames watcher stopped')
-
-        fw = FramesWatcher(q)
-        fw.start()
-
-        # restoring the exported model
-        model_dir = 'exported_model/'
-        sess = tf.Session()
-        saver = tf.train.import_meta_graph(model_dir + "export.meta")
-        saver.restore(sess, model_dir + "export")
-        input_vars = json.loads(tf.get_collection("inputs")[0].decode('utf-8'))
-        output_vars = json.loads(tf.get_collection("outputs")[0].decode('utf-8'))
-        input = tf.get_default_graph().get_tensor_by_name(input_vars["input"])
-        output = tf.get_default_graph().get_tensor_by_name(output_vars["output"])
-        print("model ready!")
-
-        # starting OpenCV window thread
-        window_title = 'preview'
-        cv2.startWindowThread()
-        cv2.namedWindow(window_title)
-
-        while not fw.stopped:
-            if fw.last_frame and not fw.isLastFrameProcessed:
-                # always processing the last frame
-                t1 = time.time()
-
-                # processing with the neural network
-                input_instance = dict(input=base64.urlsafe_b64encode(fw.last_frame).decode("ascii"), key="0")
-                input_instance = json.loads(json.dumps(input_instance))
-                input_value = np.array(input_instance["input"])
-
-                output_value = sess.run(output, feed_dict={input: np.expand_dims(input_value, axis=0)})[0]
-                output_instance = dict(output=output_value.decode("ascii"), key="0")
-                b64data = output_instance["output"]
-                b64data += "=" * (-len(b64data) % 4)
-                output_data = base64.urlsafe_b64decode(b64data.encode("ascii"))
-
-                # converting output to OpenCV image
-                nparr = np.fromstring(output_data, np.uint8)
-                img_np = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
-                cv2.imshow(window_title, img_np)
-
-                fw.isLastFrameProcessed = True
-
-                print("FPS : " + str(1 / (time.time() - t1)))
-
-    def stop_processing(self):
-        # Wait for the worker to finish
-        self.queue.put(None)
-        self.queue.close()
-        self.queue.join_thread()
-        self.nn_process.join()
-        print('stopping')
-
-
 class VideoPipeline:
 
-    def __init__(self):
+    def __init__(self, in_size, tar_size, chkpt):
         self.packets_dic = {}  # timestamps for keys and array of packets for values
         self.recent_ts = 0  # timestamp from last received frame
-        self.nn = NeuralNetwork()
+        self.nn = NeuralProcess(in_size, tar_size, chkpt)
 
     def start(self):
         self.nn.start_processing()

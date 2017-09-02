@@ -1,4 +1,7 @@
-data
-checkpoint
-samples
+__pycache__
+.idea
 
+checkpoint
+data
+logs
+samples

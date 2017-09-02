@@ -1,9 +1,8 @@
 from __future__ import division
-
 import time
 from glob import glob
-
 import os
+import cv2
 from ops import *
 from six.moves import xrange
 from subpixel import PS
@@ -78,7 +77,7 @@ class ConvNet(object):
 
         return tf.nn.tanh(h2)
 
-    def train(self, learning_rate, beta1, epoch, dataset, checkpoint_dir, is_crop):
+    def train(self, learning_rate, beta1, epoch, is_crop):
 
         network_optimizer = tf.train.AdamOptimizer(learning_rate, beta1=beta1) \
                           .minimize(self.g_loss, var_list=self.g_vars)
@@ -92,7 +91,7 @@ class ConvNet(object):
         counter = 1
         start_time = time.time()
 
-        if self.load(self.checkpoint_dir):
+        if self.load():
             print(" [*] Load SUCCESS")
         else:
             print(" [!] Load failed...")
@@ -102,28 +101,75 @@ class ConvNet(object):
 
         for epoch in xrange(epoch):
 
-            for file in sorted(glob(os.path.join("./data", dataset, "train", "*.jpg"))):
+            for file in sorted(glob(os.path.join("./data", self.dataset_name, "train", "*.jpg"))):
 
-                image_cropped = transform_image(file, self.target_size, is_crop)
+                image_cropped = transform_image(file, is_crop, self.target_size)
                 image_resized = resize(image_cropped, self.input_size)
 
                 in_img[0] = image_resized
                 target_img[0] = image_cropped
 
-                # Update G network
+                t1 = time.time()
                 _, summary_str, err_g = self.sess.run([network_optimizer, self.g_sum, self.g_loss],
                     feed_dict = { self.inputs: in_img, self.images: target_img })
                 self.writer.add_summary(summary_str, counter)
 
-                print("Epoch: [%2d]  time: %4.4f, g_loss: %.8f" \
-                      % (epoch, time.time() - start_time, err_g))
+                print("Epoch: [%2d]  time: %4.4f, g_loss: %.8f, run time: %4.4f" \
+                      % (epoch, time.time() - start_time, err_g, time.time() - t1))
 
                 if np.mod(counter, 300) == 2:
-                    self.save(checkpoint_dir, counter)
+                    self.save(self.checkpoint_dir, counter)
                     print("checkpoint saved")
                 counter += 1
 
         print("training finished")
+
+    def run_test(self, is_crop):
+
+        if not self.load():
+            print("Unable to load checkpoint")
+            return
+
+        data = sorted(glob(os.path.join("./data", self.dataset_name, "test", "*.jpg")))
+        in_arr = np.zeros((1, self.input_size, self.input_size, self.color_dim)).astype(np.float32)
+        target_arr = np.zeros((1, self.target_size, self.target_size, self.color_dim)).astype(np.float32)
+
+        counter = 1
+        for file in data:
+
+            target_img = transform_image(file, is_crop, self.target_size)
+            target_arr[:] = target_img
+
+            input_img = resize(target_img, self.input_size)
+            in_arr[:] = input_img
+
+            t1 = time.time()
+            sample, g_loss = self.sess.run(
+                [self.G, self.g_loss],
+                feed_dict={self.inputs: in_arr, self.images: target_arr}
+            )
+            print("RPS : " + str(1 / (time.time() - t1)))
+
+            save_image(in_arr, './samples/input_%s.png' % counter)
+            save_image(sample, './samples/sample_%s.png' % counter)
+            save_image(target_arr, './samples/target_%s.png' % counter)
+
+            counter += 1
+
+    def pass_forward(self, raw_img):
+
+        in_img = transform_raw(raw_img)
+        in_arr = np.zeros((1, self.input_size, self.input_size, self.color_dim)).astype(np.float32)
+        in_arr[:] = in_img
+
+        sample_arr = np.zeros((1, self.target_size, self.target_size, self.color_dim)).astype(np.float32)
+
+        samples, g_loss = self.sess.run(
+            [self.G, self.g_loss],
+            feed_dict={self.inputs: in_arr, self.images: sample_arr})
+
+        res = inverse_transform(samples)
+        return res[0]
 
     def save(self, checkpoint_dir, step):
         model_name = "conv.model"
@@ -137,58 +183,11 @@ class ConvNet(object):
                         os.path.join(checkpoint_dir, model_name),
                         global_step=step)
 
-    def run_test(self, checkpoint_dir, dataset, is_crop):
-
-        if not self.load(checkpoint_dir):
-            print("Unable to load checkpoint")
-            return
-
-        data = sorted(glob(os.path.join("./data", dataset, "test", "*.jpg")))
-        in_arr = np.zeros((1, self.input_size, self.input_size, self.color_dim)).astype(np.float32)
-        target_arr = np.zeros((1, self.target_size, self.target_size, self.color_dim)).astype(np.float32)
-
-        counter = 1
-        for file in data:
-
-            target_img = transform_image(file, self.target_size, is_crop)
-            target_arr[:] = target_img
-
-            input_img = resize(target_img, self.input_size)
-            in_arr[:] = input_img
-
-            t1 = time.time()
-            sample, g_loss = self.sess.run(
-                [self.G],
-                feed_dict={self.inputs: in_arr, self.images: target_arr}
-            )
-            print("time : " + str(1 / (time.time() - t1)))
-
-            save_image(in_arr, './samples/input_%s.png' % counter)
-            save_image(sample, './samples/sample_%s.png' % counter)
-            save_image(target_arr, './samples/target_%s.png' % counter)
-
-            counter += 1
-
-
-    def pass_forward(self, img):
-
-        in_arr = np.zeros((1, self.input_size, self.input_size, self.color_dim)).astype(np.float32)
-        sample_arr = np.zeros((1, self.target_size, self.target_size, self.color_dim)).astype(np.float32)
-        in_arr[:] = img
-        sample_arr[:] = img
-
-        samples, g_loss = self.sess.run(
-            [self.G, self.g_loss],
-            feed_dict={self.inputs: in_arr, self.images: sample_arr}
-        )
-
-        return inverse_transform(samples)
-
-    def load(self, checkpoint_dir):
+    def load(self):
         print(" [*] Reading checkpoints...")
 
         model_dir = self.dataset_name
-        checkpoint_dir = os.path.join(checkpoint_dir, model_dir)
+        checkpoint_dir = os.path.join(self.checkpoint_dir, model_dir)
 
         ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
         if ckpt and ckpt.model_checkpoint_path:
