@@ -2,7 +2,6 @@ from __future__ import division
 import time
 from glob import glob
 import os
-import cv2
 from ops import *
 from six.moves import xrange
 from subpixel import PS
@@ -11,8 +10,7 @@ from utils import *
 
 class ConvNet(object):
 
-    def __init__(self, sess, input_size, target_size, dataset_name, checkpoint_dir,
-                 y_dim=None, z_dim=100, gf_dim=64, color_dim=3):
+    def __init__(self, sess, input_size, target_size, y_dim=None, z_dim=100, gf_dim=64, color_dim=3):
 
         self.sess = sess
 
@@ -29,11 +27,7 @@ class ConvNet(object):
 
         self.gf_dim = gf_dim
 
-        self.dataset_name = dataset_name
-        self.checkpoint_dir = checkpoint_dir
-        self.build_model()
-
-    def build_model(self):
+        # Building the model #
 
         self.inputs = tf.placeholder(tf.float32, self.input_shape, name='real_images')
 
@@ -77,7 +71,7 @@ class ConvNet(object):
 
         return tf.nn.tanh(h2)
 
-    def train(self, learning_rate, beta1, epoch, is_crop):
+    def train(self, learning_rate, beta1, epoch, train_dir, c_dir):
 
         network_optimizer = tf.train.AdamOptimizer(learning_rate, beta1=beta1) \
                           .minimize(self.g_loss, var_list=self.g_vars)
@@ -91,7 +85,7 @@ class ConvNet(object):
         counter = 1
         start_time = time.time()
 
-        if self.load():
+        if self.load(c_dir):
             print(" [*] Load SUCCESS")
         else:
             print(" [!] Load failed...")
@@ -101,13 +95,13 @@ class ConvNet(object):
 
         for epoch in xrange(epoch):
 
-            for file in sorted(glob(os.path.join("./data", self.dataset_name, "train", "*.jpg"))):
+            for file in sorted(glob(os.path.join(train_dir, "*.jpg"))):
 
-                image_cropped = transform_image(file, is_crop, self.target_size)
-                image_resized = resize(image_cropped, self.input_size)
+                img_transformed = transform_img(crop_img(file, self.target_size))
+                image_resized = resize(img_transformed, self.input_size)
 
                 in_img[0] = image_resized
-                target_img[0] = image_cropped
+                target_img[0] = img_transformed
 
                 t1 = time.time()
                 _, summary_str, err_g = self.sess.run([network_optimizer, self.g_sum, self.g_loss],
@@ -118,26 +112,25 @@ class ConvNet(object):
                       % (epoch, time.time() - start_time, err_g, time.time() - t1))
 
                 if np.mod(counter, 300) == 2:
-                    self.save(self.checkpoint_dir, counter)
-                    print("checkpoint saved")
+                    self.save(c_dir, counter)
                 counter += 1
 
         print("training finished")
 
-    def run_test(self, is_crop):
+    def run_test(self, c_dir, test_dir, samples_dir):
 
-        if not self.load():
+        if not self.load(c_dir):
             print("Unable to load checkpoint")
             return
 
-        data = sorted(glob(os.path.join("./data", self.dataset_name, "test", "*.jpg")))
+        data = sorted(glob(os.path.join(test_dir, "*.jpg")))
         in_arr = np.zeros((1, self.input_size, self.input_size, self.color_dim)).astype(np.float32)
         target_arr = np.zeros((1, self.target_size, self.target_size, self.color_dim)).astype(np.float32)
 
         counter = 1
         for file in data:
 
-            target_img = transform_image(file, is_crop, self.target_size)
+            target_img = transform_img(crop_img(file, self.target_size))
             target_arr[:] = target_img
 
             input_img = resize(target_img, self.input_size)
@@ -150,15 +143,15 @@ class ConvNet(object):
             )
             print("RPS : " + str(1 / (time.time() - t1)))
 
-            save_image(in_arr, './samples/input_%s.png' % counter)
-            save_image(sample, './samples/sample_%s.png' % counter)
-            save_image(target_arr, './samples/target_%s.png' % counter)
+            save_image(in_arr, './' + samples_dir + '/input_%s.png' % counter)
+            save_image(sample, './' + samples_dir + '/sample_%s.png' % counter)
+            save_image(target_arr, './' + samples_dir + '/target_%s.png' % counter)
 
             counter += 1
 
-    def pass_forward(self, raw_img):
+    def pass_forward(self, img):
 
-        in_img = transform_raw(raw_img)
+        in_img = resize(transform_img(img), self.input_size)
         in_arr = np.zeros((1, self.input_size, self.input_size, self.color_dim)).astype(np.float32)
         in_arr[:] = in_img
 
@@ -173,26 +166,17 @@ class ConvNet(object):
 
     def save(self, checkpoint_dir, step):
         model_name = "conv.model"
-        model_dir = self.dataset_name
-        checkpoint_dir = os.path.join(checkpoint_dir, model_dir)
-
         if not os.path.exists(checkpoint_dir):
             os.makedirs(checkpoint_dir)
-
         self.saver.save(self.sess,
                         os.path.join(checkpoint_dir, model_name),
                         global_step=step)
 
-    def load(self):
-        print(" [*] Reading checkpoints...")
-
-        model_dir = self.dataset_name
-        checkpoint_dir = os.path.join(self.checkpoint_dir, model_dir)
-
-        ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+    def load(self, c_dir):
+        ckpt = tf.train.get_checkpoint_state(c_dir)
         if ckpt and ckpt.model_checkpoint_path:
             ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
-            self.saver.restore(self.sess, os.path.join(checkpoint_dir, ckpt_name))
+            self.saver.restore(self.sess, os.path.join(c_dir, ckpt_name))
             return True
         else:
             return False

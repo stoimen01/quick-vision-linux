@@ -1,6 +1,7 @@
 import cv2
 import time
 import tensorflow as tf
+import numpy as np
 
 from model import ConvNet
 from multiprocessing import Process, Queue
@@ -25,11 +26,10 @@ class NeuralProcess:
         conv_net = ConvNet(sess,
                            in_size,
                            tar_size,
-                           "outlook",
                            chkpt)
 
         # restoring the exported model
-        if not conv_net.load():
+        if not conv_net.load(chkpt):
             print("loading problem occurred")
             return
 
@@ -65,18 +65,24 @@ class NeuralProcess:
         fw.start()
 
         # starting OpenCV window thread
-        window_title = 'preview'
+        window_orig = 'original'
+        window_proc = 'processed'
         cv2.startWindowThread()
-        cv2.namedWindow(window_title)
+        cv2.namedWindow(window_orig)
+        cv2.namedWindow(window_proc)
 
         while not fw.stopped:
             if fw.last_frame and not fw.isLastFrameProcessed:
 
+                arr = np.frombuffer(fw.last_frame, dtype=np.uint8)
+                img = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+
                 t1 = time.time()
-                result = conv_net.pass_forward(fw.last_frame)
+                result = conv_net.pass_forward(img)
                 print("NN time : " + str(1 / (time.time() - t1)))
 
-                cv2.imshow(window_title, result)
+                cv2.imshow(window_orig, img)
+                cv2.imshow(window_proc, result)
 
                 fw.isLastFrameProcessed = True
 

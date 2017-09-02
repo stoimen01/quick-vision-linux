@@ -1,1 +1,1 @@
-# quick-vision-ubuntu
+# quick-vision-linux
