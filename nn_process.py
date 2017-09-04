@@ -79,7 +79,7 @@ class NeuralProcess:
 
                 t1 = time.time()
                 result = conv_net.pass_forward(img)
-                print("NN time : " + str(1 / (time.time() - t1)))
+                print("process time : " + str((time.time() - t1)))
 
                 cv2.imshow(window_orig, img)
                 cv2.imshow(window_proc, result)
