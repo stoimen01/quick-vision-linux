@@ -6,9 +6,9 @@ test </br>
 use </br>
 
 # Requirements
-Pytnon 3.*
-Tensorflow 1.*
-OpenCV 
+Pytnon 3.* </br>
+Tensorflow 1.* </br>
+OpenCV </br>
 
 
 This project is based on https://github.com/tetrachrome/subpixel.
