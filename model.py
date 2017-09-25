@@ -93,6 +93,7 @@ class ConvNet(object):
         in_img = np.zeros((1, self.input_size, self.input_size, self.color_dim)).astype(np.float32)
         target_img = np.zeros((1, self.target_size, self.target_size, self.color_dim)).astype(np.float32)
 
+
         for epoch in xrange(epoch):
 
             for file in sorted(glob(os.path.join(train_dir, "*.jpg"))):
@@ -115,7 +116,7 @@ class ConvNet(object):
                     self.save(c_dir, counter)
                 counter += 1
 
-        print("training finished")
+        print("training finished in " + str(time.time() - start_time) + " seconds")
 
     def run_test(self, c_dir, test_dir, samples_dir):
 

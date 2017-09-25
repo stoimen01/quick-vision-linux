@@ -71,18 +71,24 @@ class NeuralProcess:
         cv2.namedWindow(window_orig)
         cv2.namedWindow(window_proc)
 
+        last_frame_ts = 0
+
         while not fw.stopped:
             if fw.last_frame and not fw.isLastFrameProcessed:
 
                 arr = np.frombuffer(fw.last_frame, dtype=np.uint8)
                 img = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
 
-                t1 = time.time()
+                t0 = time.time()
                 result = conv_net.pass_forward(img)
-                print("process time : " + str((time.time() - t1)))
 
                 cv2.imshow(window_orig, img)
                 cv2.imshow(window_proc, result)
+
+                t = time.time()
+                delay_time = t - last_frame_ts
+                last_frame_ts = t
+                print("d_time : " + str(delay_time) + " nn_time: " +str(t - t0))
 
                 fw.isLastFrameProcessed = True
 

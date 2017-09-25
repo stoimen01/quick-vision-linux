@@ -18,7 +18,6 @@ class VideoPipeline:
         self.packets_dic = {}  # timestamps for keys and array of packets for values
         self.recent_ts = 0  # timestamp from last received frame
         self.nn = NeuralProcess(in_size, tar_size, chkpt)
-        self.last_frame_ts = 0
 
     def start(self):
         self.nn.start_processing()
@@ -52,13 +51,6 @@ class VideoPipeline:
 
                 # sending the data to the nn process
                 self.nn.put_recent_frame(zlib.decompress(img_data))
-
-                # calc the delay time
-                t = time.time()
-                delay_time = t - self.last_frame_ts
-                self.last_frame_ts = t
-
-                print("delay time : " + str(delay_time))
 
                 # updating and cleaning
                 self.recent_ts = packet.time_stamp
